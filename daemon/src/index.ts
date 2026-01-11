@@ -456,11 +456,13 @@ async function processMessage(
     const duration = ((Date.now() - processStart) / 1000).toFixed(1);
     console.log(`[Process] Done in ${duration}s | ${response.length} chars | ${activityUpdateCount} tool updates`);
   } catch (error) {
-    console.error('[Process] Error:', error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : '';
+    console.error('[Process] Error:', errorMsg, errorStack);
     killCurrentSession();
     await sendblue.sendMessage(
       phoneNumber,
-      `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `⚠️ [UNHANDLED ERROR]\n\nYour message: "${content.substring(0, 50)}..."\n\nError: ${errorMsg}\n\nThis error was not handled. Please report it or try again.`
     );
   } finally {
     isProcessingMessage = false;
@@ -667,8 +669,22 @@ async function poll(): Promise<void> {
         continue;
       }
 
-      // Process the message
-      await processMessage(msg.message_handle, msg.from_number, content);
+      // Process the message with error recovery
+      try {
+        await processMessage(msg.message_handle, msg.from_number, content);
+      } catch (outerError) {
+        // This catches errors that escape processMessage's own try/catch
+        const errorMsg = outerError instanceof Error ? outerError.message : String(outerError);
+        console.error('[Poll] Message processing failed:', errorMsg);
+        try {
+          await sendblue.sendMessage(
+            msg.from_number,
+            `⚠️ [SYSTEM ERROR]\n\nFailed to process: "${content.substring(0, 40)}..."\n\nError: ${errorMsg}\n\nPlease try again or report this issue.`
+          );
+        } catch (sendErr) {
+          console.error('[Poll] Failed to send error notification:', sendErr);
+        }
+      }
     }
 
     // Process queued messages if not busy
@@ -677,7 +693,9 @@ async function poll(): Promise<void> {
       await processQueue();
     }
   } catch (error) {
-    console.error('[Poll] Poll error:', error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : '';
+    console.error('[Poll] Poll error:', errorMsg, errorStack || error);
   } finally {
     isPolling = false;
   }

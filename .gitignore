@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.npm
+
+# Build output
+dist/
+
+# Environment
+.env
+.env.*
+*.local
+
+# Config with secrets
+config.json
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Database (local state)
+*.db
+*.sqlite
+
+# Test coverage
+coverage/
+
+# Claude session files
+.claude/
