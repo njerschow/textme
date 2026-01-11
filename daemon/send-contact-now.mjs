@@ -13,8 +13,9 @@ const configPath = path.join(os.homedir(), '.config/claude-imessage/config.json'
 const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 // Using the vCard URL from SendBlue's inbound message storage
-const vcardUrl = 'https://storage.googleapis.com/inbound-file-store/LYitt52k_Claude Code.vcf';
-const toNumber = '+15551234567';
+// TODO: Replace with your own vCard URL and phone number
+const vcardUrl = 'https://example.com/your-contact.vcf';
+const toNumber = '+15551234567'; // Replace with recipient's number
 
 async function main() {
   console.log('=== Sending Claude Code Contact Card ===\n');
