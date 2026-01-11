@@ -47,7 +47,7 @@ nano ~/.config/claude-imessage/config.json
 ### 4. Run
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/textme.git
+git clone https://github.com/USER/textme.git
 cd textme
 cd daemon && npm install && npm run build && cd ..
 node daemon/dist/index.js
