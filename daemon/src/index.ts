@@ -26,6 +26,7 @@ import {
   addConversationMessage,
   getConversationHistory,
   trimConversationHistory,
+  clearConversationHistory,
   cleanupOldProcessedMessages,
   getRunningTask,
   queueMessage,
@@ -233,13 +234,16 @@ function getStatus(): string {
 /**
  * Help message - IMPORTANT: Update this when adding new commands!
  */
-const HELP_MESSAGE = `Available commands:
-• help or ? - Show this help message
-• status - Show current status (task, queue)
-• interrupt / stop / cancel - Stop current task
-• yes / no - Respond to approval prompts
+const HELP_MESSAGE = `Commands:
+• help / ? - This message
+• status - Current status & directory
+• home - Go to home directory
+• reset / fresh - Home + clear chat history
+• cd <path> - Change directory
+• interrupt / stop - Stop current task
+• yes / no - Approval responses
 
-Any other message will be sent to Claude for processing.`;
+Everything else goes to Claude.`;
 
 /**
  * Check for special commands
@@ -257,6 +261,31 @@ function isStatusCommand(content: string): boolean {
 function isInterruptCommand(content: string): boolean {
   const normalized = content.toLowerCase().trim();
   return normalized === 'interrupt' || normalized === 'stop' || normalized === 'cancel';
+}
+
+function isHomeCommand(content: string): boolean {
+  const normalized = content.toLowerCase().trim();
+  return normalized === 'home';
+}
+
+function isResetCommand(content: string): boolean {
+  const normalized = content.toLowerCase().trim();
+  return normalized === 'reset' || normalized === 'fresh' || normalized === 'new session';
+}
+
+function isCdCommand(content: string): { isCD: boolean; path: string | null } {
+  const normalized = content.trim();
+  // Match "cd /path" or "cd ~/path" or "cd /path/to/dir"
+  const match = normalized.match(/^cd\s+(.+)$/i);
+  if (match) {
+    let targetPath = match[1].trim();
+    // Expand ~ to home directory
+    if (targetPath.startsWith('~')) {
+      targetPath = targetPath.replace(/^~/, os.homedir());
+    }
+    return { isCD: true, path: targetPath };
+  }
+  return { isCD: false, path: null };
 }
 
 function isApprovalResponse(content: string): { isApproval: boolean; approved: boolean } {
@@ -488,13 +517,19 @@ async function poll(): Promise<void> {
   try {
     isPolling = true;
     const pollStart = Date.now();
-    console.log(`[Poll] Starting poll cycle at ${new Date().toISOString()}`);
-    console.log(`[Poll] State: isProcessingMessage=${isProcessingMessage}, queueLength=${getQueueLength()}`);
+    const queueLen = getQueueLength();
 
     const messages = await sendblue.getInboundMessages(lastPollTime);
     lastPollTime = new Date();
+    const pollDuration = Date.now() - pollStart;
 
-    console.log(`[Poll] Found ${messages.length} new messages (took ${Date.now() - pollStart}ms)`);
+    // Only log when there's something interesting (messages found, queue, or slow poll)
+    if (messages.length > 0) {
+      console.log(`[Poll] Found ${messages.length} message(s) (${pollDuration}ms)`);
+    } else if (queueLen > 0 || isProcessingMessage) {
+      console.log(`[Poll] No new messages | processing=${isProcessingMessage} queue=${queueLen}`);
+    }
+    // Silent when idle with no messages
 
     for (const msg of messages) {
       if (isMessageProcessed(msg.message_handle)) {
@@ -543,6 +578,42 @@ async function poll(): Promise<void> {
         continue;
       }
 
+      // Handle home command - go to home directory
+      if (isHomeCommand(content)) {
+        console.log(`[Poll] Handling home command`);
+        const homeDir = os.homedir();
+        setWorkingDirectory(homeDir);
+        killCurrentSession(); // Kill session so it restarts in new dir
+        await sendblue.sendMessage(msg.from_number, `🏠 Now in: ${homeDir}`);
+        continue;
+      }
+
+      // Handle reset/fresh command - go home AND clear conversation
+      if (isResetCommand(content)) {
+        console.log(`[Poll] Handling reset command`);
+        const homeDir = os.homedir();
+        setWorkingDirectory(homeDir);
+        clearConversationHistory(msg.from_number);
+        killCurrentSession(); // Kill session so it restarts fresh
+        await sendblue.sendMessage(msg.from_number, `🔄 Fresh start!\nDirectory: ${homeDir}\nChat history cleared.`);
+        continue;
+      }
+
+      // Handle cd command - change to specific directory
+      const cdResult = isCdCommand(content);
+      if (cdResult.isCD && cdResult.path) {
+        console.log(`[Poll] Handling cd command: ${cdResult.path}`);
+        // Validate the path exists
+        if (fs.existsSync(cdResult.path) && fs.statSync(cdResult.path).isDirectory()) {
+          setWorkingDirectory(cdResult.path);
+          killCurrentSession(); // Kill session so it restarts in new dir
+          await sendblue.sendMessage(msg.from_number, `📂 Now in: ${cdResult.path}`);
+        } else {
+          await sendblue.sendMessage(msg.from_number, `❌ Directory not found: ${cdResult.path}`);
+        }
+        continue;
+      }
+
       // Check for pending approval response
       const pendingApproval = getPendingApproval(msg.from_number);
       if (pendingApproval) {
@@ -579,16 +650,12 @@ async function poll(): Promise<void> {
       }
 
       // Process the message
-      console.log(`[Poll] Starting to process message`);
       await processMessage(msg.message_handle, msg.from_number, content);
-      console.log(`[Poll] Finished processing message`);
     }
-
-    console.log(`[Poll] Poll cycle complete`);
 
     // Process queued messages if not busy
     if (!isProcessingMessage && getQueueLength() > 0) {
-      console.log(`[Poll] Not processing and queue has items - triggering processQueue()`);
+      console.log(`[Poll] Processing queued message`);
       await processQueue();
     }
   } catch (error) {

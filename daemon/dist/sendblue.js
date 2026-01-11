@@ -31,7 +31,6 @@ export class SendblueClient {
             params.set('created_at_gte', since.toISOString());
         }
         const url = `${SENDBLUE_API_BASE}/v2/messages?${params.toString()}`;
-        console.log(`[Sendblue] Fetching messages since ${since?.toISOString() || 'beginning'}`);
         const response = await fetch(url, {
             method: 'GET',
             headers: this.getHeaders(),
@@ -43,10 +42,9 @@ export class SendblueClient {
         const data = await response.json();
         // API returns { status: "OK", data: [...], pagination: {...} }
         const messages = data.data || [];
-        console.log(`[Sendblue] Fetched ${messages.length} messages`);
-        // Debug: log first message structure
+        // Only log when messages are found
         if (messages.length > 0) {
-            console.log(`[Sendblue] First message sample:`, JSON.stringify(messages[0], null, 2));
+            console.log(`[Sendblue] Received ${messages.length} message(s)`);
         }
         return messages;
     }
@@ -69,7 +67,6 @@ export class SendblueClient {
         if (mediaUrl) {
             body.media_url = mediaUrl;
         }
-        console.log(`[Sendblue] Sending message to ${toNumber}: ${content.substring(0, 100)}...`);
         const response = await fetch(`${SENDBLUE_API_BASE}/send-message`, {
             method: 'POST',
             headers: this.getHeaders(),
@@ -80,7 +77,7 @@ export class SendblueClient {
             throw new Error(`Sendblue send error: ${response.status} - ${text}`);
         }
         const data = await response.json();
-        console.log(`[Sendblue] Message sent, ID: ${data.message_handle || data.id}`);
+        console.log(`[Sendblue] Sent to ${toNumber.slice(-4)}: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
         return { messageId: data.message_handle || data.id };
     }
     /**
