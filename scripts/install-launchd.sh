@@ -7,7 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 PLIST_NAME="com.claude.imessage-daemon.plist"
-TEMPLATE_FILE="$REPO_DIR/$PLIST_NAME.template"
+TEMPLATE_FILE="$SCRIPT_DIR/$PLIST_NAME.template"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 TARGET_PLIST="$LAUNCH_AGENTS_DIR/$PLIST_NAME"
 
