@@ -166,6 +166,17 @@ export function clearConversationHistory(phoneNumber: string): void {
   database.prepare('DELETE FROM conversations WHERE phone_number = ?').run(phoneNumber);
 }
 
+export function getLastConversationInfo(phoneNumber: string): { timestamp: number; content: string; role: string } | null {
+  const database = initDb();
+  const row = database.prepare(`
+    SELECT content, timestamp, role FROM conversations
+    WHERE phone_number = ?
+    ORDER BY timestamp DESC
+    LIMIT 1
+  `).get(phoneNumber) as { content: string; timestamp: number; role: string } | undefined;
+  return row ?? null;
+}
+
 export function getAllContacts(): string[] {
   const database = initDb();
   const rows = database.prepare(`
@@ -250,6 +261,14 @@ export function getQueueLength(): number {
   const database = initDb();
   const row = database.prepare('SELECT COUNT(*) as count FROM message_queue').get() as { count: number };
   return row.count;
+}
+
+export function getAllQueuedMessages(): QueuedMessage[] {
+  const database = initDb();
+  const rows = database.prepare(
+    'SELECT id, message_handle, phone_number, content, queued_at FROM message_queue ORDER BY queued_at ASC'
+  ).all() as QueuedMessage[];
+  return rows;
 }
 
 export function clearMessageQueue(): void {

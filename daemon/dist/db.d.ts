@@ -11,6 +11,11 @@ export declare function addConversationMessage(phoneNumber: string, role: 'user'
 export declare function getConversationHistory(phoneNumber: string, limit?: number): ConversationMessage[];
 export declare function trimConversationHistory(phoneNumber: string, keepCount: number): void;
 export declare function clearConversationHistory(phoneNumber: string): void;
+export declare function getLastConversationInfo(phoneNumber: string): {
+    timestamp: number;
+    content: string;
+    role: string;
+} | null;
 export declare function getAllContacts(): string[];
 export declare function getState(key: string): string | null;
 export declare function setState(key: string, value: string): void;
@@ -23,6 +28,7 @@ export declare function queueMessage(messageHandle: string, phoneNumber: string,
 export declare function getNextQueuedMessage(): QueuedMessage | null;
 export declare function removeQueuedMessage(id: number): void;
 export declare function getQueueLength(): number;
+export declare function getAllQueuedMessages(): QueuedMessage[];
 export declare function clearMessageQueue(): void;
 export declare function addPendingApproval(id: string, taskId: string, command: string, phoneNumber: string, timeoutMs?: number): void;
 export declare function getPendingApproval(phoneNumber: string): PendingApproval | null;

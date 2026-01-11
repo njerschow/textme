@@ -33,12 +33,14 @@ import {
   getNextQueuedMessage,
   removeQueuedMessage,
   getQueueLength,
+  getAllQueuedMessages,
   getPendingApproval,
   addPendingApproval,
   removePendingApproval,
   cleanupExpiredApprovals,
   getState,
   setState,
+  getLastConversationInfo,
 } from './db.js';
 import type { DaemonConfig } from './types.js';
 import os from 'os';
@@ -141,10 +143,24 @@ let isPolling = false;
 let isProcessingMessage = false;
 
 /**
+ * Format a timestamp as a relative time (e.g., "2 hours ago")
+ */
+function formatTimeAgo(timestamp: number): string {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+/**
  * Get the current working directory (persisted in DB)
  */
 function getWorkingDirectory(): string {
-  const stored = getState('working_directory');
+  const stored = getState('current_project');
   return stored || os.homedir();
 }
 
@@ -152,7 +168,7 @@ function getWorkingDirectory(): string {
  * Set the current working directory (persisted in DB)
  */
 function setWorkingDirectory(dir: string): void {
-  setState('working_directory', dir);
+  setState('current_project', dir);
 }
 
 
@@ -193,6 +209,37 @@ async function init(): Promise<void> {
   }, 60 * 60 * 1000);
 
   console.log('[Daemon] Initialization complete');
+
+  // Send startup notification to first whitelisted number
+  if (config.whitelist.length > 0) {
+    const primaryNumber = config.whitelist[0];
+
+    // Build context-aware startup message
+    let startupMsg = `🤖 Ready!\n📂 ${workingDir}`;
+
+    // Add last conversation info if available
+    const lastConvo = getLastConversationInfo(primaryNumber);
+    if (lastConvo) {
+      const timeAgo = formatTimeAgo(lastConvo.timestamp);
+      const preview = lastConvo.content.substring(0, 50) + (lastConvo.content.length > 50 ? '...' : '');
+      const who = lastConvo.role === 'user' ? 'You' : 'Claude';
+      startupMsg += `\n\n💬 Last (${timeAgo}):\n${who}: "${preview}"`;
+    }
+
+    const qLen = getQueueLength();
+    if (qLen > 0) {
+      startupMsg += `\n\n📥 ${qLen} queued`;
+    }
+
+    startupMsg += `\n\n"?" for commands`;
+
+    try {
+      await sendblue.sendMessage(primaryNumber, startupMsg);
+      console.log('[Daemon] Startup notification sent');
+    } catch (err) {
+      console.error('[Daemon] Failed to send startup notification:', err);
+    }
+  }
 }
 
 /**
@@ -237,6 +284,7 @@ function getStatus(): string {
 const HELP_MESSAGE = `Commands:
 • help / ? - This message
 • status - Current status & directory
+• queue - View queued messages
 • home - Go to home directory
 • reset / fresh - Home + clear chat history
 • cd <path> - Change directory
@@ -256,6 +304,11 @@ function isHelpCommand(content: string): boolean {
 function isStatusCommand(content: string): boolean {
   const normalized = content.toLowerCase().trim();
   return normalized === 'status' || normalized === 'status?';
+}
+
+function isQueueCommand(content: string): boolean {
+  const normalized = content.toLowerCase().trim();
+  return normalized === 'queue' || normalized === 'q';
 }
 
 function isInterruptCommand(content: string): boolean {
@@ -316,17 +369,20 @@ async function askClaude(
   // Get conversation history for context
   const history = getConversationHistory(phoneNumber, config.conversationWindowSize);
 
-  // Format context from history (exclude the current message which was just added)
-  let contextPrompt = '';
+  // Build session context header
+  let contextPrompt = `[Session: ${workingDir}]\n`;
+
+  // Add conversation history if available
   if (history.length > 1) {
-    contextPrompt = 'Previous conversation:\n';
+    contextPrompt += '\nRecent conversation:\n';
     for (const msg of history.slice(0, -1)) {
-      const role = msg.role === 'user' ? 'User' : 'Assistant';
+      const role = msg.role === 'user' ? 'User' : 'Claude';
       contextPrompt += `${role}: ${msg.content}\n\n`;
     }
-    contextPrompt += '---\nCurrent message:\n';
+    contextPrompt += '---\n';
   }
 
+  contextPrompt += 'Current request:\n';
   const fullMessage = contextPrompt + message;
   const taskId = `task-${Date.now()}`;
 
@@ -350,17 +406,13 @@ async function processMessage(
   fromQueue: boolean = false
 ): Promise<void> {
   const processStart = Date.now();
-  console.log(`\n[Process] ====== STARTING MESSAGE PROCESSING ======`);
-  console.log(`[Process] Content: "${content.substring(0, 80)}${content.length > 80 ? '...' : ''}"`);
-  console.log(`[Process] From queue: ${fromQueue}`);
-  console.log(`[Process] Phone: ${phoneNumber}`);
-  console.log(`[Process] Handle: ${messageHandle.substring(0, 20)}...`);
+  const contentPreview = content.substring(0, 60) + (content.length > 60 ? '...' : '');
+  console.log(`[Process] Starting: "${contentPreview}"${fromQueue ? ' (from queue)' : ''}`);
 
   // Notify what we're starting to work on (unless already notified for queued messages)
   if (!fromQueue) {
     const queueLen = getQueueLength();
     const queueInfo = queueLen > 0 ? ` | ${queueLen} queued` : '';
-    console.log(`[Process] Sending start notification (queue: ${queueLen})`);
     await sendblue.sendMessage(
       phoneNumber,
       `🔄 Starting: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"${queueInfo}`
@@ -369,36 +421,23 @@ async function processMessage(
 
   // Save to conversation history
   addConversationMessage(phoneNumber, 'user', content);
-  console.log(`[Process] Saved to conversation history`);
 
   try {
     isProcessingMessage = true;
-    console.log(`[Process] Set isProcessingMessage=true`);
-
-    // Track tool activity updates sent
     let activityUpdateCount = 0;
 
     // Tool activity callback - sends real-time updates when Claude uses tools
     const onToolActivity = async (activity: string) => {
       activityUpdateCount++;
-      console.log(`[Activity] #${activityUpdateCount}: ${activity}`);
-
+      console.log(`[Activity] ${activity}`);
       try {
-        // Send tool activity as a brief update
         await sendblue.sendMessage(phoneNumber, `🔧 ${activity}`);
-        console.log(`[Activity] Message sent`);
       } catch (err) {
-        console.error('[Activity] Failed to send activity update:', err);
+        console.error('[Activity] Send failed:', err);
       }
     };
 
-    // Send to Claude with tool activity callback
-    console.log(`[Process] Calling askClaude (verbose mode with tool activity)`);
-    const claudeStart = Date.now();
     const response = await askClaude(content, phoneNumber, onToolActivity);
-    const claudeDuration = Date.now() - claudeStart;
-    console.log(`[Process] Claude responded in ${claudeDuration}ms`);
-    console.log(`[Process] Response length: ${response.length} chars`);
 
     // Truncate if needed
     const MAX_LENGTH = 15000;
@@ -406,38 +445,28 @@ async function processMessage(
       ? response.substring(0, MAX_LENGTH) + '\n\n[Truncated]'
       : response;
 
-    // Send final response (marked as complete if we sent activity updates)
+    // Send final response
     const finalPrefix = activityUpdateCount > 0 ? '✅ Done\n\n' : '';
-    console.log(`[Process] Sending final response (${activityUpdateCount} activity updates sent)`);
     await sendblue.sendMessage(phoneNumber, finalPrefix + finalResponse);
 
     // Save response
     addConversationMessage(phoneNumber, 'assistant', finalResponse);
     trimConversationHistory(phoneNumber, config.conversationWindowSize);
 
-    const totalDuration = Date.now() - processStart;
-    console.log(`[Process] ====== PROCESSING COMPLETE ======`);
-    console.log(`[Process] Total time: ${totalDuration}ms`);
-    console.log(`[Process] Activity updates: ${activityUpdateCount}`);
+    const duration = ((Date.now() - processStart) / 1000).toFixed(1);
+    console.log(`[Process] Done in ${duration}s | ${response.length} chars | ${activityUpdateCount} tool updates`);
   } catch (error) {
-    console.error('[Process] ====== ERROR ======');
     console.error('[Process] Error:', error);
-
-    // Kill session on error so it restarts fresh
-    console.log(`[Process] Killing session due to error`);
     killCurrentSession();
-
     await sendblue.sendMessage(
       phoneNumber,
       `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   } finally {
     isProcessingMessage = false;
-    console.log(`[Process] Set isProcessingMessage=false`);
   }
 
   // Check for queued messages
-  console.log(`[Process] Checking queue for next message`);
   await processQueue();
 }
 
@@ -523,78 +552,77 @@ async function poll(): Promise<void> {
     lastPollTime = new Date();
     const pollDuration = Date.now() - pollStart;
 
-    // Only log when there's something interesting (messages found, queue, or slow poll)
-    if (messages.length > 0) {
-      console.log(`[Poll] Found ${messages.length} message(s) (${pollDuration}ms)`);
-    } else if (queueLen > 0 || isProcessingMessage) {
-      console.log(`[Poll] No new messages | processing=${isProcessingMessage} queue=${queueLen}`);
-    }
-    // Silent when idle with no messages
+    // 1 line for polling status
+    const status = isProcessingMessage ? 'busy' : (queueLen > 0 ? `queue=${queueLen}` : 'idle');
+    console.log(`[Poll] ${messages.length} msgs (${pollDuration}ms) | ${status}`);
 
     for (const msg of messages) {
-      if (isMessageProcessed(msg.message_handle)) {
-        console.log(`[Poll] Skipping already processed: ${msg.message_handle.substring(0, 20)}...`);
-        continue;
-      }
-
+      if (isMessageProcessed(msg.message_handle)) continue;
       if (!isWhitelisted(msg.from_number)) {
-        console.log(`[Poll] Ignoring non-whitelisted: ${msg.from_number}`);
         markMessageProcessed(msg.message_handle);
         continue;
       }
 
       const content = msg.content?.trim();
       if (!content) {
-        console.log(`[Poll] Skipping empty message from ${msg.from_number}`);
         markMessageProcessed(msg.message_handle);
         continue;
       }
 
-      console.log(`[Poll] === NEW MESSAGE ===`);
-      console.log(`[Poll] From: ${msg.from_number}`);
-      console.log(`[Poll] Handle: ${msg.message_handle}`);
-      console.log(`[Poll] Content: "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
-      console.log(`[Poll] Received at: ${msg.created_at || 'unknown'}`);
+      // 1 line per new message
+      console.log(`[Poll] New: "${content.substring(0, 80)}${content.length > 80 ? '...' : ''}"`);
       markMessageProcessed(msg.message_handle);
 
       // Handle help command immediately
       if (isHelpCommand(content)) {
-        console.log(`[Poll] Handling help command`);
         await sendblue.sendMessage(msg.from_number, HELP_MESSAGE);
         continue;
       }
 
       // Handle status command immediately (even while processing)
       if (isStatusCommand(content)) {
-        console.log(`[Poll] Handling status command`);
         await sendblue.sendMessage(msg.from_number, getStatus());
+        continue;
+      }
+
+      // Handle queue command immediately - show what's in the queue
+      if (isQueueCommand(content)) {
+        const queuedMessages = getAllQueuedMessages();
+        if (queuedMessages.length === 0) {
+          await sendblue.sendMessage(msg.from_number, '📭 Queue is empty');
+        } else {
+          let queueDisplay = `📥 Queue (${queuedMessages.length}):\n`;
+          queuedMessages.forEach((qm, idx) => {
+            const preview = qm.content.substring(0, 40) + (qm.content.length > 40 ? '...' : '');
+            const timeAgo = formatTimeAgo(qm.queued_at);
+            queueDisplay += `${idx + 1}. "${preview}" (${timeAgo})\n`;
+          });
+          await sendblue.sendMessage(msg.from_number, queueDisplay.trim());
+        }
         continue;
       }
 
       // Handle interrupt command immediately
       if (isInterruptCommand(content)) {
-        console.log(`[Poll] Handling interrupt command`);
         await handleInterrupt(msg.from_number);
         continue;
       }
 
       // Handle home command - go to home directory
       if (isHomeCommand(content)) {
-        console.log(`[Poll] Handling home command`);
         const homeDir = os.homedir();
         setWorkingDirectory(homeDir);
-        killCurrentSession(); // Kill session so it restarts in new dir
+        killCurrentSession();
         await sendblue.sendMessage(msg.from_number, `🏠 Now in: ${homeDir}`);
         continue;
       }
 
       // Handle reset/fresh command - go home AND clear conversation
       if (isResetCommand(content)) {
-        console.log(`[Poll] Handling reset command`);
         const homeDir = os.homedir();
         setWorkingDirectory(homeDir);
         clearConversationHistory(msg.from_number);
-        killCurrentSession(); // Kill session so it restarts fresh
+        killCurrentSession();
         await sendblue.sendMessage(msg.from_number, `🔄 Fresh start!\nDirectory: ${homeDir}\nChat history cleared.`);
         continue;
       }
@@ -602,11 +630,9 @@ async function poll(): Promise<void> {
       // Handle cd command - change to specific directory
       const cdResult = isCdCommand(content);
       if (cdResult.isCD && cdResult.path) {
-        console.log(`[Poll] Handling cd command: ${cdResult.path}`);
-        // Validate the path exists
         if (fs.existsSync(cdResult.path) && fs.statSync(cdResult.path).isDirectory()) {
           setWorkingDirectory(cdResult.path);
-          killCurrentSession(); // Kill session so it restarts in new dir
+          killCurrentSession();
           await sendblue.sendMessage(msg.from_number, `📂 Now in: ${cdResult.path}`);
         } else {
           await sendblue.sendMessage(msg.from_number, `❌ Directory not found: ${cdResult.path}`);
@@ -617,17 +643,13 @@ async function poll(): Promise<void> {
       // Check for pending approval response
       const pendingApproval = getPendingApproval(msg.from_number);
       if (pendingApproval) {
-        console.log(`[Poll] Checking if message is approval response`);
         const { isApproval, approved } = isApprovalResponse(content);
         if (isApproval) {
-          console.log(`[Poll] Handling approval response: approved=${approved}`);
           removePendingApproval(pendingApproval.id);
           if (approved) {
             await sendblue.sendMessage(msg.from_number, '✅ Approved. Executing...');
-            // TODO: Resume the paused command
           } else {
             await sendblue.sendMessage(msg.from_number, '❌ Rejected. Command cancelled.');
-            // TODO: Cancel the paused command
           }
           continue;
         }
@@ -635,16 +657,12 @@ async function poll(): Promise<void> {
 
       // If busy, queue the message and notify user
       if (isProcessingMessage || getRunningTask()) {
-        const runningTask = getRunningTask();
-        console.log(`[Poll] BUSY - queuing message`);
-        console.log(`[Poll]   isProcessingMessage=${isProcessingMessage}`);
-        console.log(`[Poll]   runningTask=${runningTask?.description?.substring(0, 50) || 'none'}`);
         queueMessage(msg.message_handle, msg.from_number, content);
-        const queueLen = getQueueLength();
-        console.log(`[Poll]   New queue length: ${queueLen}`);
+        const qLen = getQueueLength();
+        console.log(`[Poll] Queued (${qLen} in queue)`);
         await sendblue.sendMessage(
           msg.from_number,
-          `📥 Queued (position ${queueLen}): "${content.substring(0, 40)}${content.length > 40 ? '...' : ''}"`
+          `📥 Queued (position ${qLen}): "${content.substring(0, 40)}${content.length > 40 ? '...' : ''}"`
         );
         continue;
       }

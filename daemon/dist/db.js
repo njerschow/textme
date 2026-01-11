@@ -134,6 +134,16 @@ export function clearConversationHistory(phoneNumber) {
     const database = initDb();
     database.prepare('DELETE FROM conversations WHERE phone_number = ?').run(phoneNumber);
 }
+export function getLastConversationInfo(phoneNumber) {
+    const database = initDb();
+    const row = database.prepare(`
+    SELECT content, timestamp, role FROM conversations
+    WHERE phone_number = ?
+    ORDER BY timestamp DESC
+    LIMIT 1
+  `).get(phoneNumber);
+    return row ?? null;
+}
 export function getAllContacts() {
     const database = initDb();
     const rows = database.prepare(`
@@ -195,6 +205,11 @@ export function getQueueLength() {
     const database = initDb();
     const row = database.prepare('SELECT COUNT(*) as count FROM message_queue').get();
     return row.count;
+}
+export function getAllQueuedMessages() {
+    const database = initDb();
+    const rows = database.prepare('SELECT id, message_handle, phone_number, content, queued_at FROM message_queue ORDER BY queued_at ASC').all();
+    return rows;
 }
 export function clearMessageQueue() {
     const database = initDb();

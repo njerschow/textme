@@ -1,13 +1,13 @@
 /**
- * Claude Code CLI wrapper - VERBOSE MODE
- * Uses `claude --verbose` for real-time tool activity streaming
- * Parses verbose output for tool calls and extracts final response
+ * Claude Code CLI wrapper - STREAM JSON MODE
+ * Uses `claude --output-format stream-json` for real-time tool activity
+ * Each line is a JSON event we parse for tool_use and text content
  */
 export interface ClaudeSessionConfig {
     workingDirectory: string;
 }
 export interface VerboseCallbacks {
-    /** Called when a tool activity is detected */
+    /** Called when a tool is being used */
     onToolActivity?: (activity: string) => void;
     /** Minimum interval between activity callbacks in ms (default: 1000) */
     activityIntervalMs?: number;
@@ -21,9 +21,13 @@ export declare class ClaudeSession {
     constructor(config: ClaudeSessionConfig);
     start(): Promise<void>;
     /**
-     * Send a message and get response - with real-time tool activity updates via --verbose
+     * Send a message and get response - with real-time streaming via stream-json
      */
     send(message: string, taskId?: string, callbacks?: VerboseCallbacks): Promise<string>;
+    /**
+     * Process a stream-json event
+     */
+    private processStreamEvent;
     private cleanup;
     getPartialOutput(): string;
     getPid(): number | undefined;
