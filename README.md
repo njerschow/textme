@@ -122,6 +122,25 @@ Phone (iMessage) → Sendblue API → Daemon (Node.js) → Claude CLI
 
 ---
 
+## Uninstall
+
+```bash
+# Stop the daemon if running
+pkill -f "node.*daemon/dist"
+
+# Remove auto-start (if enabled)
+./scripts/uninstall-launchd.sh
+
+# Remove config and logs
+rm -rf ~/.config/claude-imessage
+rm -f ~/.local/log/claude-imessage.log
+
+# Remove the repo
+cd .. && rm -rf textme
+```
+
+---
+
 ## License
 
 MIT
