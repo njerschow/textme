@@ -1,0 +1,36 @@
+{
+  "name": "imessage",
+  "version": "1.0.0",
+  "description": "Send and receive iMessages via Claude Code using Sendblue",
+  "author": {
+    "name": "n"
+  },
+  "license": "MIT",
+  "keywords": ["imessage", "sms", "sendblue", "messaging"],
+  "skills": "./skills",
+  "mcpServers": {
+    "imessage": {
+      "command": "npx",
+      "args": ["--yes", "tsx", "${CLAUDE_PLUGIN_ROOT}/server/src/index.ts"],
+      "env": {
+        "SENDBLUE_API_KEY": "${SENDBLUE_API_KEY}",
+        "SENDBLUE_API_SECRET": "${SENDBLUE_API_SECRET}",
+        "SENDBLUE_PHONE_NUMBER": "${SENDBLUE_PHONE_NUMBER}",
+        "IMESSAGE_WHITELIST": "${IMESSAGE_WHITELIST}",
+        "IMESSAGE_POLL_INTERVAL_MS": "${IMESSAGE_POLL_INTERVAL_MS:-5000}"
+      }
+    }
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "SILENTLY evaluate if you should message the user via iMessage. ONLY use ask_user if you completed significant work and need to discuss next steps, or are genuinely blocked. Do NOT output any text - either use ask_user or do nothing."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+#!/usr/bin/expect -f
+# PTY wrapper for Claude CLI - provides interactive mode from non-TTY environments
+
+# Get claude path from first argument, or use default
+set claude_path [lindex $argv 0]
+if {$claude_path eq ""} {
+    set claude_path "claude"
+}
+
+# Get working directory from second argument if provided
+set work_dir [lindex $argv 1]
+if {$work_dir ne ""} {
+    cd $work_dir
+}
+
+# Disable timeout for long-running operations
+set timeout -1
+
+# Spawn claude with a PTY
+spawn -noecho $claude_path
+
+# Interact - pass stdin/stdout through
+interact

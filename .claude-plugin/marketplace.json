@@ -1,0 +1,13 @@
+{
+  "name": "imessage-marketplace",
+  "owner": {
+    "name": "n"
+  },
+  "plugins": [
+    {
+      "name": "imessage",
+      "source": "./",
+      "description": "Send and receive iMessages via Claude Code using Sendblue"
+    }
+  ]
+}

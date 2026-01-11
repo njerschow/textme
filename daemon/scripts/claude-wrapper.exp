@@ -1,0 +1,60 @@
+#!/usr/bin/expect -f
+# Claude wrapper - provides PTY for interactive mode
+
+set timeout -1
+set claude_path [lindex $argv 0]
+set work_dir [lindex $argv 1]
+
+if {$work_dir ne ""} {
+    cd $work_dir
+}
+
+# Spawn claude with PTY
+spawn $claude_path
+
+# Wait for initial prompt (the ❯ character)
+expect {
+    "❯" {
+        # Ready for input
+    }
+    timeout {
+        puts "TIMEOUT waiting for prompt"
+        exit 1
+    }
+}
+
+# Signal that we're ready
+puts "READY"
+flush stdout
+
+# Main loop - read stdin, send to claude, wait for response
+while {1} {
+    # Read a line from stdin
+    expect_user -re "(.*)\n"
+    set input $expect_out(1,string)
+
+    # Check for exit command
+    if {$input eq "/exit" || $input eq "EXIT"} {
+        send "/exit\r"
+        expect eof
+        exit 0
+    }
+
+    # Send input to claude
+    send "$input\r"
+
+    # Wait for the response and next prompt
+    expect {
+        -re "(.*)❯" {
+            # Got response, print it
+            puts $expect_out(1,string)
+            puts "PROMPT_READY"
+            flush stdout
+        }
+        timeout {
+            puts "TIMEOUT waiting for response"
+            puts "PROMPT_READY"
+            flush stdout
+        }
+    }
+}
