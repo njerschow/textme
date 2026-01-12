@@ -8,7 +8,7 @@ Text Claude from your phone via iMessage. Send a message, get a response. It can
 
 ### 1. Get Your Free Sendblue Number
 
-1. Sign up at [sendblue.com/company-signup](https://sendblue.com/company-signup)
+1. Sign up at [dashboard.sendblue.com/company-signup](https://dashboard.sendblue.com/company-signup)
 2. Get your **free iMessage number**
 3. Copy your **API Key** and **API Secret** from Dashboard → API Keys
 
