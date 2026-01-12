@@ -10,11 +10,13 @@ Text Claude from your phone via iMessage. Send a message, get a response.
 2. Get your **API Key** and **API Secret** from Dashboard → API Keys
 3. Add your phone number as a **verified contact** in the dashboard
 
-### 2. Install
+### 2. Requirements
+
+You need Node.js 18+ and Claude Code CLI. If you don't have them:
 
 ```bash
-brew install node
-npm install -g @anthropic-ai/claude-code
+brew install node                         # Node.js
+npm install -g @anthropic-ai/claude-code  # Claude CLI
 ```
 
 ### 3. Configure
