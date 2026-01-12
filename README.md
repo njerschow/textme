@@ -26,6 +26,8 @@ mkdir -p ~/.config/claude-imessage
 nano ~/.config/claude-imessage/config.json
 ```
 
+Paste this and **replace the placeholder values** with your actual credentials:
+
 ```json
 {
   "sendblue": {
@@ -39,7 +41,10 @@ nano ~/.config/claude-imessage/config.json
 }
 ```
 
-Phone format: `+1` followed by 10 digits (e.g., `+19175551234`)
+- Replace `YOUR_API_KEY` and `YOUR_API_SECRET` with your Sendblue credentials
+- Replace `+1SENDBLUE_NUMBER` with your Sendblue phone number
+- Replace `+1YOUR_PHONE` with your personal phone number
+- Phone format: `+1` followed by 10 digits (e.g., `+19175551234`)
 
 ### 4. Run
 
