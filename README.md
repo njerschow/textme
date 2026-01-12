@@ -41,9 +41,9 @@ Paste this and **replace the placeholder values** with your actual credentials:
 }
 ```
 
-- Replace `YOUR_API_KEY` and `YOUR_API_SECRET` with your Sendblue API credentials
-- Replace `+1SENDBLUE_NUMBER` with your Sendblue phone number
-- Replace `+1YOUR_PHONE` with your personal phone number
+- `apiKey` / `apiSecret` - Your Sendblue API credentials (from Dashboard → API Keys)
+- `phoneNumber` - Your Sendblue phone number (the number you'll text TO)
+- `whitelist` - Your personal phone number(s) that are allowed to use the bot
 - Phone format: `+1` followed by 10 digits (e.g., `+19175551234`)
 
 ### 4. Run
