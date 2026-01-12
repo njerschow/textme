@@ -71,9 +71,43 @@ export class ClaudeSession {
 
   /**
    * Send a message and get response - with real-time streaming via stream-json
+   * Includes retry logic for transient API errors (529 overloaded, etc.)
    */
   async send(message: string, taskId?: string, callbacks?: VerboseCallbacks): Promise<string> {
-    console.log(`[Claude] ====== STARTING (stream-json mode) ======`);
+    const maxRetries = 3;
+    const baseDelayMs = 5000; // 5 seconds initial delay
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.sendAttempt(message, taskId, callbacks, attempt);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        const isRetryable = errorMsg.includes('529') ||
+                           errorMsg.includes('overload') ||
+                           errorMsg.includes('Overloaded') ||
+                           errorMsg.includes('rate_limit') ||
+                           errorMsg.includes('capacity');
+
+        if (isRetryable && attempt < maxRetries) {
+          const delayMs = baseDelayMs * Math.pow(2, attempt - 1); // Exponential backoff
+          console.log(`[Claude] Retryable error (attempt ${attempt}/${maxRetries}), waiting ${delayMs/1000}s...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        // Non-retryable or exhausted retries
+        throw error;
+      }
+    }
+
+    throw new Error('Unexpected: retry loop exited without return or throw');
+  }
+
+  /**
+   * Single attempt to send message to Claude
+   */
+  private async sendAttempt(message: string, taskId: string | undefined, callbacks: VerboseCallbacks | undefined, attempt: number): Promise<string> {
+    console.log(`[Claude] ====== STARTING (stream-json mode) attempt ${attempt} ======`);
     console.log(`[Claude] Task: ${taskId || 'none'} | ${message.length} chars | ${this.config.workingDirectory}`);
 
     if (!this.isActive_) {

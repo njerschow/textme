@@ -22,8 +22,13 @@ export declare class ClaudeSession {
     start(): Promise<void>;
     /**
      * Send a message and get response - with real-time streaming via stream-json
+     * Includes retry logic for transient API errors (529 overloaded, etc.)
      */
     send(message: string, taskId?: string, callbacks?: VerboseCallbacks): Promise<string>;
+    /**
+     * Single attempt to send message to Claude
+     */
+    private sendAttempt;
     /**
      * Process a stream-json event
      */
