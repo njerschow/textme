@@ -340,7 +340,7 @@ function isResetCommand(content: string): boolean {
   return normalized === 'reset' || normalized === 'fresh' || normalized === 'new session';
 }
 
-function isCdCommand(content: string): { isCD: boolean; path: string | null } {
+function isCdCommand(content: string): { isCD: boolean; path: string | null; error?: string } {
   const normalized = content.trim();
   // Match "cd /path" or "cd ~/path" or "cd /path/to/dir"
   const match = normalized.match(/^cd\s+(.+)$/i);
@@ -350,7 +350,18 @@ function isCdCommand(content: string): { isCD: boolean; path: string | null } {
     if (targetPath.startsWith('~')) {
       targetPath = targetPath.replace(/^~/, os.homedir());
     }
-    return { isCD: true, path: targetPath };
+
+    // Security: Resolve to absolute path and check for path traversal
+    const resolvedPath = path.resolve(targetPath);
+    const homeDir = os.homedir();
+
+    // Only allow paths within home directory or /tmp
+    if (!resolvedPath.startsWith(homeDir) && !resolvedPath.startsWith('/tmp')) {
+      console.warn(`[Security] Blocked cd to path outside home: ${resolvedPath}`);
+      return { isCD: true, path: null, error: 'Access denied: path outside allowed directories' };
+    }
+
+    return { isCD: true, path: resolvedPath };
   }
   return { isCD: false, path: null };
 }
@@ -714,13 +725,17 @@ async function poll(): Promise<void> {
 
       // Handle cd command - change to specific directory
       const cdResult = isCdCommand(content);
-      if (cdResult.isCD && cdResult.path) {
-        if (fs.existsSync(cdResult.path) && fs.statSync(cdResult.path).isDirectory()) {
-          setWorkingDirectory(cdResult.path);
-          killCurrentSession();
-          await sendblue.sendMessage(msg.from_number, `📂 Now in: ${cdResult.path}`);
-        } else {
-          await sendblue.sendMessage(msg.from_number, `❌ Directory not found: ${cdResult.path}`);
+      if (cdResult.isCD) {
+        if (cdResult.error) {
+          await sendblue.sendMessage(msg.from_number, `❌ ${cdResult.error}`);
+        } else if (cdResult.path) {
+          if (fs.existsSync(cdResult.path) && fs.statSync(cdResult.path).isDirectory()) {
+            setWorkingDirectory(cdResult.path);
+            killCurrentSession();
+            await sendblue.sendMessage(msg.from_number, `📂 Now in: ${cdResult.path}`);
+          } else {
+            await sendblue.sendMessage(msg.from_number, `❌ Directory not found: ${cdResult.path}`);
+          }
         }
         continue;
       }
