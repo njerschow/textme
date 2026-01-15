@@ -101,33 +101,78 @@ export class SendblueClient {
         return this.phoneNumber;
     }
     /**
-     * Upload a media file and get a media object ID
+     * Upload a file from a local path and get a media URL
+     * Uses the new /upload-file endpoint (max 100MB)
      */
-    async uploadMedia(filePath) {
-        console.log(`[Sendblue] Uploading media file: ${filePath}`);
+    async uploadFile(filePath) {
+        console.log(`[Sendblue] Uploading file: ${filePath}`);
         const fs = await import('fs');
-        const FormData = (await import('formdata-node')).FormData;
-        const { fileFromPath } = await import('formdata-node/file-from-path');
-        const formData = new FormData();
-        const file = await fileFromPath(filePath);
-        formData.append('file', file);
-        const headers = {
-            'sb-api-key-id': this.apiKey,
-            'sb-api-secret-key': this.apiSecret,
-            // Don't set Content-Type - let fetch set it with boundary for multipart
-        };
-        const response = await fetch(`${SENDBLUE_API_BASE}/upload-media-object`, {
+        const path = await import('path');
+        const fileBuffer = fs.readFileSync(filePath);
+        const filename = path.basename(filePath);
+        return this.uploadFileFromBuffer(fileBuffer, filename);
+    }
+    /**
+     * Upload a file from a Buffer and get a media URL
+     * Uses the new /upload-file endpoint (max 100MB)
+     */
+    async uploadFileFromBuffer(buffer, filename) {
+        console.log(`[Sendblue] Uploading buffer as: ${filename} (${buffer.length} bytes)`);
+        // Create multipart form data manually
+        const boundary = `----SendblueUpload${Date.now()}`;
+        const header = Buffer.from(`--${boundary}\r\n` +
+            `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+            `Content-Type: application/octet-stream\r\n\r\n`);
+        const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
+        const body = Buffer.concat([header, buffer, footer]);
+        const response = await fetch(`${SENDBLUE_API_BASE}/upload-file`, {
             method: 'POST',
-            headers,
-            body: formData,
+            headers: {
+                'sb-api-key-id': this.apiKey,
+                'sb-api-secret-key': this.apiSecret,
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            },
+            body: body,
         });
         if (!response.ok) {
             const text = await response.text();
-            throw new Error(`Sendblue media upload error: ${response.status} - ${text}`);
+            throw new Error(`Sendblue file upload error: ${response.status} - ${text}`);
         }
         const data = await response.json();
-        console.log(`[Sendblue] Media uploaded, URL: ${data.media_url || data.url}`);
-        return data.media_url || data.url;
+        console.log(`[Sendblue] File uploaded, URL: ${data.media_url}`);
+        return data.media_url;
+    }
+    /**
+     * Upload a file from a URL and get a Sendblue media URL
+     */
+    async uploadFileFromUrl(url, filename) {
+        console.log(`[Sendblue] Downloading and uploading from URL: ${url}`);
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to download file from ${url}: ${response.status}`);
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const inferredFilename = filename || url.split('/').pop()?.split('?')[0] || 'file';
+        return this.uploadFileFromBuffer(buffer, inferredFilename);
+    }
+    /**
+     * Send a message with an attachment (uploads file first if needed)
+     */
+    async sendMessageWithAttachment(toNumber, content, attachment) {
+        let mediaUrl;
+        if (attachment.filePath) {
+            mediaUrl = await this.uploadFile(attachment.filePath);
+        }
+        else if (attachment.buffer && attachment.filename) {
+            mediaUrl = await this.uploadFileFromBuffer(attachment.buffer, attachment.filename);
+        }
+        else if (attachment.url) {
+            mediaUrl = await this.uploadFileFromUrl(attachment.url, attachment.filename);
+        }
+        else {
+            throw new Error('Attachment must have filePath, buffer+filename, or url');
+        }
+        return this.sendMessage(toNumber, content, mediaUrl);
     }
     /**
      * Send a contact card (vCard) via a publicly accessible URL

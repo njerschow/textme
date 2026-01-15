@@ -33,9 +33,30 @@ export declare class SendblueClient {
      */
     getPhoneNumber(): string;
     /**
-     * Upload a media file and get a media object ID
+     * Upload a file from a local path and get a media URL
+     * Uses the new /upload-file endpoint (max 100MB)
      */
-    uploadMedia(filePath: string): Promise<string>;
+    uploadFile(filePath: string): Promise<string>;
+    /**
+     * Upload a file from a Buffer and get a media URL
+     * Uses the new /upload-file endpoint (max 100MB)
+     */
+    uploadFileFromBuffer(buffer: Buffer, filename: string): Promise<string>;
+    /**
+     * Upload a file from a URL and get a Sendblue media URL
+     */
+    uploadFileFromUrl(url: string, filename?: string): Promise<string>;
+    /**
+     * Send a message with an attachment (uploads file first if needed)
+     */
+    sendMessageWithAttachment(toNumber: string, content: string, attachment: {
+        filePath?: string;
+        buffer?: Buffer;
+        url?: string;
+        filename?: string;
+    }): Promise<{
+        messageId: string;
+    }>;
     /**
      * Send a contact card (vCard) via a publicly accessible URL
      * Note: Sendblue requires the vCard to be hosted on a public URL

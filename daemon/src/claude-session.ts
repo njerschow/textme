@@ -269,12 +269,12 @@ export class ClaudeSession {
             if (block.input.file_path) {
               activity += `: ${block.input.file_path}`;
             } else if (block.input.command) {
-              const cmd = block.input.command.substring(0, 50);
-              activity += `: ${cmd}${block.input.command.length > 50 ? '...' : ''}`;
+              const cmd = block.input.command.substring(0, 100);
+              activity += `: ${cmd}${block.input.command.length > 100 ? '...' : ''}`;
             } else if (block.input.pattern) {
               activity += `: ${block.input.pattern}`;
             } else if (block.input.query) {
-              activity += `: ${block.input.query.substring(0, 40)}`;
+              activity += `: ${block.input.query.substring(0, 80)}`;
             }
           }
 

@@ -817,10 +817,32 @@ function startPolling() {
     pollInterval = setInterval(poll, config.pollIntervalMs);
 }
 /**
- * Shutdown
+ * Shutdown - with graceful handling if processing a message
  */
+let shutdownRequested = false;
 async function shutdown(signal) {
-    console.log(`[Daemon] ${signal} received, shutting down...`);
+    console.log(`[Daemon] ${signal} received...`);
+    // If already shutting down, force exit
+    if (shutdownRequested) {
+        console.log('[Daemon] Force exit (second signal)');
+        process.exit(1);
+    }
+    shutdownRequested = true;
+    // If processing a message, wait for it to finish (up to 30 seconds)
+    if (isProcessingMessage) {
+        console.log('[Daemon] Waiting for current task to complete (up to 30s)...');
+        const maxWait = 30000;
+        const startWait = Date.now();
+        while (isProcessingMessage && (Date.now() - startWait) < maxWait) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        if (isProcessingMessage) {
+            console.log('[Daemon] Timed out waiting for task, forcing shutdown');
+        }
+        else {
+            console.log('[Daemon] Task completed, proceeding with shutdown');
+        }
+    }
     if (pollInterval)
         clearInterval(pollInterval);
     killCurrentSession();
