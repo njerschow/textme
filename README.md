@@ -20,28 +20,54 @@ Text Claude from anywhere. Send messages, voice notes, or images — get intelli
 
 ## Quick Start
 
-### 1. Sendblue Setup (Free)
-
-1. Go to [sendblue.com/api](https://sendblue.com/api) and sign up
-2. **Verify your phone number** in the dashboard
-3. Copy your **API Key**, **API Secret**, and **Sendblue phone number** from Settings
-
-### 2. Install Requirements
+### 1. Requirements
 
 ```bash
-brew install node                         # Node.js 18+
-npm install -g @anthropic-ai/claude-code  # Claude Code CLI
+brew install node                           # Node.js 18+
+npm install -g @sendblue/cli               # Sendblue CLI
+npm install -g @anthropic-ai/claude-code   # Claude Code
 ```
 
-### 3. Clone & Configure
+### 2. Get Your Sendblue Credentials
+
+Run the Sendblue setup wizard:
+
+```bash
+sendblue setup
+```
+
+This creates your account, assigns a phone number, and guides you through verifying your first contact. When done, print your credentials:
+
+```bash
+sendblue show-keys
+```
+
+Copy the **API Key**, **API Secret**, and **phone number** — you'll need them in the next step.
+
+<details>
+<summary>Already have an account? (dashboard method)</summary>
+
+1. Go to [dashboard.sendblue.com](https://dashboard.sendblue.com)
+2. **Settings → API Settings** — copy your **API Key** and **API Secret**
+3. **Settings → Phone Lines** — copy your **Sendblue phone number**
+
+</details>
+
+### 3. Install
 
 ```bash
 git clone https://github.com/njerschow/textme.git
-cd textme
+cd textme/daemon && npm install && npm run build
+```
 
-# Create config
+### 4. Configure
+
+```bash
 mkdir -p ~/.config/claude-imessage
-cat > ~/.config/claude-imessage/config.json << 'EOF'
+nano ~/.config/claude-imessage/config.json
+```
+
+```json
 {
   "sendblue": {
     "apiKey": "YOUR_API_KEY",
@@ -52,25 +78,34 @@ cat > ~/.config/claude-imessage/config.json << 'EOF'
   "pollIntervalMs": 5000,
   "conversationWindowSize": 20
 }
-EOF
 ```
 
-### 4. Voice Notes (Optional)
+| Field | What to put |
+|-------|-------------|
+| `sendblue.apiKey` | Your Sendblue API key (from `sendblue show-keys`) |
+| `sendblue.apiSecret` | Your Sendblue API secret (from `sendblue show-keys`) |
+| `sendblue.phoneNumber` | The Sendblue number assigned to you (from `sendblue show-keys`) |
+| `whitelist` | Array of **your personal phone numbers** that can text the bot |
+
+### 5. Voice Notes (Optional)
+
+To enable voice memo transcription, add your OpenAI API key (run from inside `textme/daemon/`):
 
 ```bash
-echo "OPENAI_API_KEY=sk-your-key-here" > daemon/.env
+echo "OPENAI_API_KEY=sk-your-key-here" > .env
 ```
 
-### 5. Build & Run
+### 6. Run
+
+From inside `textme/daemon/`:
 
 ```bash
-cd daemon && npm install && npm run build
 npm start
 ```
 
-### 6. Test
+### 7. Test
 
-Text your Sendblue number: `hello`
+Text your Sendblue number from your phone: `hello`
 
 ---
 
@@ -159,6 +194,6 @@ rm -rf ~/.config/claude-imessage ~/.local/log/claude-imessage.log
 
 ---
 
-Built with [Sendblue](https://sendblue.com) + [Claude](https://anthropic.com)
+Built with [Sendblue](https://sendblue.com/cli) + [Claude Code](https://claude.ai/code)
 
 MIT License
